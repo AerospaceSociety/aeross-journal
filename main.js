@@ -1,4 +1,4 @@
-const pb = new PocketBase("https://testing.helplink.dev");
+// AEROSS Journal main.js
 const link = document.createElement("link");
 link.rel = "icon";
 link.type = "image/png";

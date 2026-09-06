@@ -1,0 +1,8 @@
+{
+  "name": "aeross-journal",
+  "version": "1.0.0",
+  "description": "AEROSS Journal Web Platform",
+  "scripts": {
+    "dev": "node server.js"
+  }
+}

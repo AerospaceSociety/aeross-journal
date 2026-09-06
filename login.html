@@ -51,14 +51,13 @@
     <span>Don't have an account? <a href="/signup.html">Sign Up</a></span>
 
 </div>
-<script src="https://unpkg.com/pocketbase/dist/pocketbase.umd.js"></script>
 <script src="main.js"></script>
-<script>
+<script type="module">
+import { login, resetPassword } from './auth.js';
 
 const form = document.getElementById("loginForm");
 
 async function reset() {
-
     const email = form.email.value.trim();
 
     if (!email) {
@@ -67,36 +66,36 @@ async function reset() {
     }
 
     try {
-        await pb.collection("users").requestPasswordReset(email);
-
+        await resetPassword(email);
         alert("If an account with that email exists, a password reset email has been sent.");
-
     } catch (err) {
         console.error(err);
-        alert("Unable to send password reset email.");
+        alert("Unable to send password reset email: " + (err.message || err));
     }
 }
-form.addEventListener("submit", async (e) => {
+window.reset = reset;
 
+form.addEventListener("submit", async (e) => {
     e.preventDefault();
 
     try {
-
-        await pb.collection("users")
-            .authWithPassword(
-                form.email.value,
-                form.password.value
-            );
+        await login(
+            form.email.value.trim(),
+            form.password.value
+        );
 
         window.location.href = "index.html";
-    }
-
-    catch(err) {
-
-        alert("Invalid login");
+    } catch(err) {
+        console.error(err);
+        if (err.code === "auth/invalid-credential" || err.code === "auth/wrong-password" || err.code === "auth/user-not-found") {
+            alert("Invalid email or password. Please check your credentials or reset your password.");
+        } else if (err.code === "auth/too-many-requests") {
+            alert("Too many failed attempts. Please try again later or reset your password.");
+        } else {
+            alert("Login failed: " + (err.message || "Please check your credentials"));
+        }
     }
 });
-
 </script>
 
 </body>

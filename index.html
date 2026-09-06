@@ -129,133 +129,112 @@
         </div>
     </footer>
 </div>
-    <script src="https://unpkg.com/pocketbase/dist/pocketbase.umd.js"></script>
     <script src="main.js"></script>
-    <script>
+    <script type="module">
+        import { getPaper, getAcceptedPapers } from './papers.js';
+        import { watchAuth } from './auth.js';
+
         const art_week_desc = document.getElementById("art-week-desc");
         const art_week_title = document.getElementById("art-week-title");
-
         const art_week_desc_mobile = document.getElementById("art-week-desc-mobile");
         const art_week_title_mobile = document.getElementById("art-week-title-mobile");
-        const articleId = "wlh8zxp8eg7tfz3";
+        
+        let articleId = "wlh8zxp8eg7tfz3";
+        let currentUser = null;
+
+        watchAuth(user => {
+            currentUser = user;
+        });
 
         async function loadArticleOfWeek() {
-
             try {
-
-                const paper =
-                    await pb.collection("papers")
-                    .getOne(articleId, {
-
-                        expand: "authors"
-                    });
-
-                const abstract = String(paper.abstract || "");
-
-                art_week_title.innerText = paper.title;
-
-                art_week_desc.innerHTML =
-                    abstract.length > 650
-                        ? abstract.slice(0, 650) + "<b>... Read More</b>"
-                        : abstract;
-
-                
-                if (art_week_title_mobile)
-                    art_week_title_mobile.innerText = paper.title;
-
-                if (art_week_desc_mobile)
-                    art_week_desc_mobile.innerHTML =
-                        abstract.length > 650
+                const accepted = await getAcceptedPapers();
+                if (accepted && accepted.length > 0) {
+                    const paper = accepted.find(p => p.id === articleId) || accepted[0];
+                    articleId = paper.id;
+                    const abstract = String(paper.abstract || "");
+                    if (art_week_title) art_week_title.innerText = paper.title || "";
+                    if (art_week_desc) {
+                        art_week_desc.innerHTML = abstract.length > 650
                             ? abstract.slice(0, 650) + "<b>... Read More</b>"
                             : abstract;
-            }
-
-            catch(err) {
-
-                console.error(err);
+                    }
+                    if (art_week_title_mobile) art_week_title_mobile.innerText = paper.title || "";
+                    if (art_week_desc_mobile) {
+                        art_week_desc_mobile.innerHTML = abstract.length > 650
+                            ? abstract.slice(0, 650) + "<b>... Read More</b>"
+                            : abstract;
+                    }
+                }
+            } catch(err) {
+                console.warn("Could not load article of the week:", err);
             }
         }
 
         loadArticleOfWeek();
 
-        document.getElementById("art-week")
-        ?.addEventListener("click", () => {
-            window.location.href = `/paper.html?id=${articleId}`;
+        document.getElementById("art-week")?.addEventListener("click", () => {
+            if (articleId) window.location.href = `/paper.html?id=${articleId}`;
         });
 
-        document.getElementById("art-week-mobile")
-        ?.addEventListener("click", () => {
-            window.location.href = `/paper.html?id=${articleId}`;
+        document.getElementById("art-week-mobile")?.addEventListener("click", () => {
+            if (articleId) window.location.href = `/paper.html?id=${articleId}`;
         });
+
         // Search options
-
         const searchBox = document.getElementById("searchBox");
         const suggestions = document.getElementById("suggestions");
+        const searchBoxMobile = document.getElementById("searchBox-mobile");
+        const suggestionsMobile = document.getElementById("suggestions-mobile");
 
-        const searchBoxMobile =
-            document.getElementById("searchBox-mobile");
-
-        const suggestionsMobile =
-            document.getElementById("suggestions-mobile");
-
-        function setupSearch(searchBox, suggestions) {
-
-            searchBox.addEventListener("input", () => {
-
-                const value = searchBox.value.toLowerCase();
-
-                suggestions.innerHTML = "";
-
+        function setupSearch(inputEl, suggestionsEl) {
+            if (!inputEl || !suggestionsEl) return;
+            inputEl.addEventListener("input", () => {
+                const value = inputEl.value.toLowerCase();
+                suggestionsEl.innerHTML = "";
                 if (value === "") return;
 
-                const matches = options.filter(item =>
+                const matches = (typeof options !== "undefined" ? options : []).filter(item =>
                     item.toLowerCase().includes(value)
                 );
 
                 matches.forEach(match => {
-
                     const div = document.createElement("div");
-
                     div.classList.add("suggestion-item");
                     div.textContent = match;
 
                     div.addEventListener("click", () => {
-
-                        window.location.href =
-                            `/search.html?sub=${encodeURIComponent(match)}`;
-
+                        window.location.href = `/search.html?sub=${encodeURIComponent(match)}`;
                     });
 
-                    suggestions.appendChild(div);
+                    suggestionsEl.appendChild(div);
                 });
             });
         }
 
-        async function profile() {
-            const user = pb.authStore.model;
-
-            if (!user) {
-
+        function profile() {
+            if (!currentUser) {
                 alert("You must be logged in");
-
                 window.location.href = "/login.html";
                 return;
             }
-            window.location.href = `/profile.html?id=${user.id}`;
+            window.location.href = `/profile.html?id=${currentUser.uid}`;
         }
 
-        function publish(){
-            window.location.href = "/pwu.html"
-            return;
+        function publish() {
+            window.location.href = "/pwu.html";
         }
-        function about(){
-            window.location.href = "/about.html"
-            return;
+
+        function about() {
+            window.location.href = "/about.html";
         }
+
+        window.profile = profile;
+        window.publish = publish;
+        window.about = about;
 
         setupSearch(searchBox, suggestions);
         setupSearch(searchBoxMobile, suggestionsMobile);
     </script>
-    <script src="main.js"></script>
 </body>
 </html>

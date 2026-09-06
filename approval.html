@@ -137,118 +137,85 @@
 
 <div id="results"></div>
 
-<script src="https://unpkg.com/pocketbase/dist/pocketbase.umd.js"></script>
-
 <script src="main.js"></script>
+<script type="module">
+import { watchAuth } from './auth.js';
+import { getUserProfile } from './users.js';
+import { getPendingPapers, approvePaper as apiApprove, rejectPaper as apiReject } from './papers.js';
+import { sendApprovalEmail, sendRejectionEmail } from './email.js';
 
-<script>
+let pendingPapersList = [];
 
 /* CHECK AUTH */
-
-pb.collection("users").authRefresh();
-const user = pb.authStore.model;
-
-if (
-    !pb.authStore.isValid || !user || user.aeross != true
-) {
-
-    document.body.innerHTML = `
-
-        <h1 class="status">
-            Access Denied
-        </h1>
-
-    `;
-    window.location.href = "login.html"
-    throw new Error("Unauthorized");
-}
-
-/* LOAD PAPERS */
-
-async function loadPapers() {
-
-    try {
-
-        const papers =
-            await pb.collection("papers")
-            .getFullList({
-
-                filter: `accepted = false`,
-
-                expand: "authors",
-
-                sort: "-created"
-            });
-
-        renderPapers(papers);
+watchAuth(async (user) => {
+    if (!user) {
+        document.body.innerHTML = `<h1 class="status">Access Denied</h1>`;
+        setTimeout(() => { window.location.href = "login.html"; }, 1500);
+        return;
     }
 
-    catch(err) {
+    try {
+        const profile = await getUserProfile(user.uid);
+        if (!profile || (profile.editor !== true && profile.across !== true && profile.aeross !== true)) {
+            document.body.innerHTML = `<h1 class="status">Access Denied: Editors Only</h1>`;
+            setTimeout(() => { window.location.href = "login.html"; }, 1500);
+            return;
+        }
 
+        loadPapers();
+    } catch(err) {
         console.error(err);
+        document.body.innerHTML = `<h1 class="status">Error checking authorization</h1>`;
+    }
+});
 
-        document.getElementById("results")
-            .innerHTML = `
-
-                <p class="status">
-                    Failed to load papers.
-                </p>
-
-            `;
+/* LOAD PAPERS */
+async function loadPapers() {
+    try {
+        const papers = await getPendingPapers();
+        pendingPapersList = papers || [];
+        renderPapers(pendingPapersList);
+    } catch(err) {
+        console.error(err);
+        document.getElementById("results").innerHTML = `
+            <p class="status">Failed to load papers.</p>
+        `;
     }
 }
 
 /* RENDER */
-
 function renderPapers(papers) {
-
-    const container =
-        document.getElementById("results");
-
+    const container = document.getElementById("results");
     container.innerHTML = "";
 
-    if (papers.length === 0) {
-
+    if (!papers || papers.length === 0) {
         container.innerHTML = `
-
-            <p class="status">
-                No pending papers.
-            </p>
-
+            <p class="status">No pending papers.</p>
         `;
-
         return;
     }
 
     papers.forEach(paper => {
-
         let authorsHTML = "";
 
-        if (paper.expand?.authors) {
-
-            paper.expand.authors.forEach(author => {
-
-                authorsHTML += `
-                    <a href="profile.html?id=${author.id}">
-                        ${author.name}
-                    </a>, 
-                `;
-            });
+        if (Array.isArray(paper.authorNames) && paper.authorNames.length > 0) {
+            authorsHTML = paper.authorNames.map((name, i) => {
+                const authorId = Array.isArray(paper.authorIds) ? paper.authorIds[i] : null;
+                return authorId 
+                    ? `<a href="profile.html?id=${authorId}">${name}</a>`
+                    : `<span>${name}</span>`;
+            }).join(", ");
+        } else if (paper.authorName) {
+            authorsHTML = paper.authorId
+                ? `<a href="profile.html?id=${paper.authorId}">${paper.authorName}</a>`
+                : `<span>${paper.authorName}</span>`;
         }
 
-        const pdfUrl =
-            pb.files.getURL(
-                paper,
-                paper.file
-            );
+        const pdfUrl = paper.fileUrl || paper.downloadUrl || "#";
 
         container.innerHTML += `
-
             <div class="paper-card">
-
-                <h2 class="paper-title">
-                    ${paper.title}
-                </h2>
+                <h2 class="paper-title">${paper.title || "Untitled"}</h2>
 
                 <div class="authors">
                     ${authorsHTML}
@@ -261,11 +228,10 @@ function renderPapers(papers) {
 
                 <p>
                     <strong>Field:</strong>
-                    ${paper.field}
+                    ${paper.field || "Uncategorized"}
                 </p>
 
                 <div class="buttons">
-
                     <a
                         class="pdf-btn"
                         href="${pdfUrl}"
@@ -287,66 +253,80 @@ function renderPapers(papers) {
                     >
                         Reject
                     </button>
-
                 </div>
-
             </div>
         `;
     });
 }
 
 /* APPROVE */
-
 async function approvePaper(id) {
+    const targetPaper = pendingPapersList.find(p => p.id === id);
 
     try {
+        await apiApprove(id);
+        alert("Paper approved!");
 
-        await pb.collection("papers")
-            .update(id, {
-
-                accepted: true
-            });
+        // Trigger automated approval email to primary author
+        if (targetPaper && Array.isArray(targetPaper.authorIds) && targetPaper.authorIds.length > 0) {
+            try {
+                const authorProfile = await getUserProfile(targetPaper.authorIds[0]);
+                if (authorProfile && authorProfile.email) {
+                    sendApprovalEmail({
+                        email: authorProfile.email,
+                        name: authorProfile.name || (targetPaper.authorNames ? targetPaper.authorNames[0] : 'Author'),
+                        title: targetPaper.title,
+                        paperId: id
+                    });
+                }
+            } catch(mailErr) {
+                console.warn("Could not dispatch approval email:", mailErr);
+            }
+        }
 
         loadPapers();
-    }
-
-    catch(err) {
-
+    } catch(err) {
         console.error(err);
-
-        alert("Failed to approve paper.");
+        alert("Failed to approve paper: " + (err.message || err));
     }
 }
 
 /* REJECT */
-
 async function rejectPaper(id) {
-
-    const confirmDelete =
-        confirm("Reject and delete this paper?");
-
+    const confirmDelete = confirm("Reject and delete this paper?");
     if (!confirmDelete) return;
 
-    try {
+    const targetPaper = pendingPapersList.find(p => p.id === id);
 
-        await pb.collection("papers")
-            .delete(id);
+    try {
+        await apiReject(id);
+        alert("Paper rejected.");
+
+        // Trigger automated rejection notice email to primary author
+        if (targetPaper && Array.isArray(targetPaper.authorIds) && targetPaper.authorIds.length > 0) {
+            try {
+                const authorProfile = await getUserProfile(targetPaper.authorIds[0]);
+                if (authorProfile && authorProfile.email) {
+                    sendRejectionEmail({
+                        email: authorProfile.email,
+                        name: authorProfile.name || (targetPaper.authorNames ? targetPaper.authorNames[0] : 'Author'),
+                        title: targetPaper.title
+                    });
+                }
+            } catch(mailErr) {
+                console.warn("Could not dispatch rejection email:", mailErr);
+            }
+        }
 
         loadPapers();
-    }
-
-    catch(err) {
-
+    } catch(err) {
         console.error(err);
-
-        alert("Failed to reject paper.");
+        alert("Failed to reject paper: " + (err.message || err));
     }
 }
 
-/* START */
-
-loadPapers();
-
+window.approvePaper = approvePaper;
+window.rejectPaper = rejectPaper;
 </script>
 
 </body>

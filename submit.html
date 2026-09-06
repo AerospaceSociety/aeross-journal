@@ -283,20 +283,19 @@ input[type="file"] {
         <h3>Authors</h3>
 
         <div id="authorsContainer">
-
             <div class="author-field">
                 <input
                     type="text"
                     name="authors[]"
-                    placeholder="Author User ID"
+                    id="publisherIdInput"
+                    placeholder="Publisher User ID (Loading...)"
                     required
                 >
             </div>
-
         </div>
 
         <button type="button" id="addAuthor">
-            + Add Author
+            + Add Co-Author
         </button>
 
         <h3>File Upload</h3>
@@ -312,77 +311,61 @@ input[type="file"] {
     </form>
 
 </div>
-<script src="https://unpkg.com/pocketbase/dist/pocketbase.umd.js"></script>
 <script src="main.js"></script>
 <script type="module">
-if (!pb.authStore.isValid) {
-    window.location.href = "/login.html";
-}
+import { watchAuth } from './auth.js';
+import { getUserProfile } from './users.js';
+import { submitPaper } from './papers.js';
+import { sendSubmissionEmail } from './email.js';
 
-try {
-    await pb.collection("users").authRefresh();
-} catch (err) {
-    pb.authStore.clear();
-    window.location.href = "/login.html";
-}
+let currentUser = null;
+let currentProfile = null;
 
-const searchBox =
-    document.getElementById("searchBox");
+watchAuth(async (user) => {
+    if (!user) {
+        window.location.href = "/login.html";
+        return;
+    }
+    currentUser = user;
 
-const suggestions =
-    document.getElementById("suggestions");
+    // Auto-fill publisher ID
+    const publisherInput = document.getElementById("publisherIdInput");
+    if (publisherInput) {
+        publisherInput.value = user.uid;
+    }
 
-const hiddenField =
-    document.createElement("input");
+    try {
+        currentProfile = await getUserProfile(user.uid);
+    } catch(e) {
+        console.warn("Could not fetch user profile:", e);
+    }
+});
 
+const searchBox = document.getElementById("searchBox");
+const suggestions = document.getElementById("suggestions");
+const hiddenField = document.createElement("input");
 hiddenField.type = "hidden";
-
 hiddenField.name = "field";
-
-document
-    .getElementById("paperForm")
-    .appendChild(hiddenField);
+document.getElementById("paperForm").appendChild(hiddenField);
 
 /* SEARCH */
-
 searchBox.addEventListener("input", () => {
-
-    const value =
-        searchBox.value
-        .toLowerCase()
-        .trim();
-
+    const value = searchBox.value.toLowerCase().trim();
     suggestions.innerHTML = "";
-
     if (!value) return;
 
-    const matches =
-        options.filter(item =>
-
-            item.toLowerCase()
-                .includes(value)
-        );
+    const matches = (typeof options !== "undefined" ? options : []).filter(item =>
+        item.toLowerCase().includes(value)
+    );
 
     matches.forEach(match => {
-
-        const div =
-            document.createElement("div");
-
+        const div = document.createElement("div");
         div.classList.add("suggestion-item");
-
         div.textContent = match;
 
-        /* CLICK AUTOFILL */
-
         div.onclick = () => {
-
-            // Fill visible box
             searchBox.value = match;
-
-            // Fill actual form field
             hiddenField.value = match;
-
-            // Clear suggestions
             suggestions.innerHTML = "";
         };
 
@@ -391,50 +374,30 @@ searchBox.addEventListener("input", () => {
 });
 
 /* CLICK OUTSIDE CLOSES */
-
 document.addEventListener("click", (e) => {
-
-    if (
-        !searchBox.contains(e.target)
-        &&
-        !suggestions.contains(e.target)
-    ) {
-
+    if (!searchBox.contains(e.target) && !suggestions.contains(e.target)) {
         suggestions.innerHTML = "";
     }
 });
 
-/* ENTER WITHOUT CLICK */
-
 searchBox.addEventListener("change", () => {
-
-    hiddenField.value =
-        searchBox.value;
+    hiddenField.value = searchBox.value;
 });
 
-const authorsContainer =
-    document.getElementById("authorsContainer");
-
-const addAuthor =
-    document.getElementById("addAuthor");
+const authorsContainer = document.getElementById("authorsContainer");
+const addAuthor = document.getElementById("addAuthor");
 
 /* ---------------- ADD AUTHORS ---------------- */
-
 addAuthor.onclick = () => {
-
     const div = document.createElement("div");
-
     div.classList.add("author-field");
-
     div.innerHTML = `
-
         <input
             type="text"
             name="authors[]"
-            placeholder="Author User ID"
+            placeholder="Co-Author Name or User ID"
             required
         >
-
         <button
             type="button"
             class="remove-author"
@@ -442,118 +405,92 @@ addAuthor.onclick = () => {
             Remove
         </button>
     `;
-
     authorsContainer.appendChild(div);
-
-    div.querySelector(".remove-author")
-       .onclick = () => div.remove();
+    div.querySelector(".remove-author").onclick = () => div.remove();
 };
 
 /* ---------------- SUBMIT ---------------- */
-
 const form = document.getElementById("paperForm");
+const submitBtn = form.querySelector('button[type="submit"]');
 
 form.addEventListener("submit", async (e) => {
-
     e.preventDefault();
-    await pb.collection("users").authRefresh();
 
-    const user = pb.authStore.model;
-
-    if (!user) {
-
-        alert("You must be logged in");
-
+    if (!currentUser) {
+        alert("You must be logged in to submit a paper");
         window.location.href = "/login.html";
         return;
     }
 
-    if (!user.verified) {
-
-        alert("Only verified users can submit papers");
-
+    const file = form.pdf.files[0];
+    if (!file) {
+        alert("Please select a PDF file to upload");
         return;
     }
+
+    const initialBtnText = submitBtn.textContent;
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Uploading to Drive & Submitting...";
+
     try {
+        const title = form.title.value.trim();
+        const field = hiddenField.value || searchBox.value.trim();
+        const abstract = form.abstract.value.trim();
 
-        const formData = new FormData();
+        // Collect author metadata
+        const authorInputs = document.querySelectorAll('input[name="authors[]"]');
+        const rawAuthors = Array.from(authorInputs)
+            .map(i => i.value.trim())
+            .filter(Boolean);
 
-        /* BASIC FIELDS */
+        const primaryName = currentProfile?.name || currentUser.displayName || currentUser.email || "Author";
+        const authorIds = [currentUser.uid];
+        const authorNames = [primaryName];
 
-        formData.append(
-            "title",
-            form.title.value
-        );
+        for (const author of rawAuthors) {
+            if (author && author !== currentUser.uid && author !== primaryName && !authorIds.includes(author)) {
+                authorIds.push(author);
+                try {
+                    const coProfile = await getUserProfile(author);
+                    authorNames.push(coProfile?.name || author);
+                } catch {
+                    authorNames.push(author);
+                }
+            }
+        }
 
-        formData.append(
-            "field",
-            form.field.value
-        );
-
-        formData.append(
-            "abstract",
-            form.abstract.value
-        );
-
-        formData.append(
-            "accepted",
-            "false"
-        );
-
-        /* FILE */
-
-        formData.append(
-            "file",
-            form.pdf.files[0]
-        );
-
-        /* AUTHORS */
-
-        const authorInputs =
-            document.querySelectorAll(
-                'input[name="authors[]"]'
-            );
-
-        authorInputs.forEach(input => {
-
-            formData.append(
-                "authors",
-                input.value
-            );
+        const docRef = await submitPaper({
+            title,
+            abstract,
+            field,
+            file,
+            authorId: currentUser.uid,
+            authorName: primaryName,
+            authorIds,
+            authorNames
         });
 
-        /* CREATE PAPER */
+        // Trigger automated submission receipt email via Zoho bridge
+        if (currentUser.email) {
+            sendSubmissionEmail({
+                email: currentUser.email,
+                name: primaryName,
+                title,
+                field
+            });
+        }
 
-        await pb.collection("papers")
-            .create(formData);
-
-        alert("Paper submitted successfully");
-
+        alert("Paper submitted successfully! It is now pending editor approval.");
         form.reset();
-
-        authorsContainer.innerHTML = `
-            <div class="author-field">
-
-                <input
-                    type="text"
-                    name="authors[]"
-                    placeholder="Author User ID"
-                    required
-                >
-
-            </div>
-        `;
-
         window.location.href = "/index.html";
-    }
-
-    catch(err) {
-
-        alert(JSON.stringify(err.response, null, 2));
-
+    } catch(err) {
+        console.error("Submission error:", err);
+        alert("Submission failed: " + (err.message || "Please check your network connection and try again."));
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.textContent = initialBtnText;
     }
 });
-
 </script>
 
 </body>
