@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login</title>
+    <link rel="stylesheet" href="main.css">
+<style>
+    body {
+        padding: 40px;
+    }
+    .form-container {
+        background-color: white;
+        padding: 30px;
+    }
+    input {
+        width: 100%;
+        height: 30px;
+        margin-bottom: 30px;
+    }
+    button {
+        width: 100%;
+        height: 30px; 
+        background-color: var(--red);
+        color: white;
+        cursor: pointer;
+    }
+
+    a {
+        color: var(--red);
+    }
+</style>
+</head>
+<body>
+
+<div class="form-container">
+
+    <h1>Login</h1>
+
+    <form id="loginForm">
+
+        <input type="email" name="email" placeholder="Email" required>
+        <br>
+        <input type="password" name="password" placeholder="Password" required>
+        <p onclick="reset()">Forgot Password?</p>
+        <br>
+        <button type="submit">Login</button>
+
+    </form>
+    <br>
+    <span>Don't have an account? <a href="/signup.html">Sign Up</a></span>
+
+</div>
+<script src="main.js"></script>
+<script type="module">
+import { login, resetPassword } from './auth.js';
+
+const form = document.getElementById("loginForm");
+
+async function reset() {
+    const email = form.email.value.trim();
+
+    if (!email) {
+        alert("Please enter your email address first.");
+        return;
+    }
+
+    try {
+        await resetPassword(email);
+        alert("If an account with that email exists, a password reset email has been sent.");
+    } catch (err) {
+        console.error(err);
+        alert("Unable to send password reset email: " + (err.message || err));
+    }
+}
+window.reset = reset;
+
+form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    try {
+        await login(
+            form.email.value.trim(),
+            form.password.value
+        );
+
+        window.location.href = "index.html";
+    } catch(err) {
+        console.error(err);
+        if (err.code === "auth/invalid-credential" || err.code === "auth/wrong-password" || err.code === "auth/user-not-found") {
+            alert("Invalid email or password. Please check your credentials or reset your password.");
+        } else if (err.code === "auth/too-many-requests") {
+            alert("Too many failed attempts. Please try again later or reset your password.");
+        } else {
+            alert("Login failed: " + (err.message || "Please check your credentials"));
+        }
+    }
+});
+</script>
+
+</body>
+</html>

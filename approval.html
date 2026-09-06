@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Approval Panel</title>
+
+    <link rel="stylesheet" href="main.css">
+
+<style>
+
+    body {
+
+        background-color: var(--red);
+
+        margin: 40px;
+    }
+
+    #pageTitle {
+
+        color: white;
+
+        font-size: 3rem;
+
+        margin-bottom: 30px;
+    }
+
+    #results {
+
+        display: flex;
+
+        flex-direction: column;
+
+        gap: 20px;
+    }
+
+    .paper-card {
+
+        background-color: white;
+
+        padding: 30px;
+
+        border: 2px solid black;
+
+        color: var(--red);
+    }
+
+    .paper-title {
+
+        font-size: 2rem;
+
+        margin-bottom: 10px;
+    }
+
+    .authors {
+
+        margin-bottom: 20px;
+    }
+
+    .authors a {
+
+        color: var(--red);
+
+        margin-right: 10px;
+    }
+
+    .abstract {
+
+        text-align: justify;
+
+        line-height: 1.6;
+    }
+
+    .buttons {
+
+        display: flex;
+
+        gap: 10px;
+
+        margin-top: 20px;
+    }
+
+    button {
+
+        border: none;
+
+        padding: 12px 20px;
+
+        font-size: 1rem;
+
+        cursor: pointer;
+
+        color: white;
+    }
+
+    .approve-btn {
+
+        background-color: green;
+    }
+
+    .reject-btn {
+
+        background-color: darkred;
+    }
+
+    .pdf-btn {
+
+        background-color: black;
+
+        text-decoration: none;
+
+        padding: 12px 20px;
+
+        color: white;
+    }
+
+    .status {
+
+        color: white;
+
+        font-size: 1.2rem;
+    }
+
+</style>
+
+</head>
+
+<body>
+
+<h1 id="pageTitle">
+    Pending Paper Approvals
+</h1>
+
+<div id="results"></div>
+
+<script src="main.js"></script>
+<script type="module">
+import { watchAuth } from './auth.js';
+import { getUserProfile } from './users.js';
+import { getPendingPapers, approvePaper as apiApprove, rejectPaper as apiReject } from './papers.js';
+import { sendApprovalEmail, sendRejectionEmail } from './email.js';
+
+let pendingPapersList = [];
+
+/* CHECK AUTH */
+watchAuth(async (user) => {
+    if (!user) {
+        document.body.innerHTML = `<h1 class="status">Access Denied</h1>`;
+        setTimeout(() => { window.location.href = "login.html"; }, 1500);
+        return;
+    }
+
+    try {
+        const profile = await getUserProfile(user.uid);
+        if (!profile || (profile.editor !== true && profile.across !== true && profile.aeross !== true)) {
+            document.body.innerHTML = `<h1 class="status">Access Denied: Editors Only</h1>`;
+            setTimeout(() => { window.location.href = "login.html"; }, 1500);
+            return;
+        }
+
+        loadPapers();
+    } catch(err) {
+        console.error(err);
+        document.body.innerHTML = `<h1 class="status">Error checking authorization</h1>`;
+    }
+});
+
+/* LOAD PAPERS */
+async function loadPapers() {
+    try {
+        const papers = await getPendingPapers();
+        pendingPapersList = papers || [];
+        renderPapers(pendingPapersList);
+    } catch(err) {
+        console.error(err);
+        document.getElementById("results").innerHTML = `
+            <p class="status">Failed to load papers.</p>
+        `;
+    }
+}
+
+/* RENDER */
+function renderPapers(papers) {
+    const container = document.getElementById("results");
+    container.innerHTML = "";
+
+    if (!papers || papers.length === 0) {
+        container.innerHTML = `
+            <p class="status">No pending papers.</p>
+        `;
+        return;
+    }
+
+    papers.forEach(paper => {
+        let authorsHTML = "";
+
+        if (Array.isArray(paper.authorNames) && paper.authorNames.length > 0) {
+            authorsHTML = paper.authorNames.map((name, i) => {
+                const authorId = Array.isArray(paper.authorIds) ? paper.authorIds[i] : null;
+                return authorId 
+                    ? `<a href="profile.html?id=${authorId}">${name}</a>`
+                    : `<span>${name}</span>`;
+            }).join(", ");
+        } else if (paper.authorName) {
+            authorsHTML = paper.authorId
+                ? `<a href="profile.html?id=${paper.authorId}">${paper.authorName}</a>`
+                : `<span>${paper.authorName}</span>`;
+        }
+
+        const pdfUrl = paper.fileUrl || paper.downloadUrl || "#";
+
+        container.innerHTML += `
+            <div class="paper-card">
+                <h2 class="paper-title">${paper.title || "Untitled"}</h2>
+
+                <div class="authors">
+                    ${authorsHTML}
+                </div>
+
+                <p class="abstract">
+                    <strong>Abstract:</strong>
+                    ${paper.abstract || ""}
+                </p>
+
+                <p>
+                    <strong>Field:</strong>
+                    ${paper.field || "Uncategorized"}
+                </p>
+
+                <div class="buttons">
+                    <a
+                        class="pdf-btn"
+                        href="${pdfUrl}"
+                        target="_blank"
+                    >
+                        Read PDF
+                    </a>
+
+                    <button
+                        class="approve-btn"
+                        onclick="approvePaper('${paper.id}')"
+                    >
+                        Approve
+                    </button>
+
+                    <button
+                        class="reject-btn"
+                        onclick="rejectPaper('${paper.id}')"
+                    >
+                        Reject
+                    </button>
+                </div>
+            </div>
+        `;
+    });
+}
+
+/* APPROVE */
+async function approvePaper(id) {
+    const targetPaper = pendingPapersList.find(p => p.id === id);
+
+    try {
+        await apiApprove(id);
+        alert("Paper approved!");
+
+        // Trigger automated approval email to primary author
+        if (targetPaper && Array.isArray(targetPaper.authorIds) && targetPaper.authorIds.length > 0) {
+            try {
+                const authorProfile = await getUserProfile(targetPaper.authorIds[0]);
+                if (authorProfile && authorProfile.email) {
+                    sendApprovalEmail({
+                        email: authorProfile.email,
+                        name: authorProfile.name || (targetPaper.authorNames ? targetPaper.authorNames[0] : 'Author'),
+                        title: targetPaper.title,
+                        paperId: id
+                    });
+                }
+            } catch(mailErr) {
+                console.warn("Could not dispatch approval email:", mailErr);
+            }
+        }
+
+        loadPapers();
+    } catch(err) {
+        console.error(err);
+        alert("Failed to approve paper: " + (err.message || err));
+    }
+}
+
+/* REJECT */
+async function rejectPaper(id) {
+    const confirmDelete = confirm("Reject and delete this paper?");
+    if (!confirmDelete) return;
+
+    const targetPaper = pendingPapersList.find(p => p.id === id);
+
+    try {
+        await apiReject(id);
+        alert("Paper rejected.");
+
+        // Trigger automated rejection notice email to primary author
+        if (targetPaper && Array.isArray(targetPaper.authorIds) && targetPaper.authorIds.length > 0) {
+            try {
+                const authorProfile = await getUserProfile(targetPaper.authorIds[0]);
+                if (authorProfile && authorProfile.email) {
+                    sendRejectionEmail({
+                        email: authorProfile.email,
+                        name: authorProfile.name || (targetPaper.authorNames ? targetPaper.authorNames[0] : 'Author'),
+                        title: targetPaper.title
+                    });
+                }
+            } catch(mailErr) {
+                console.warn("Could not dispatch rejection email:", mailErr);
+            }
+        }
+
+        loadPapers();
+    } catch(err) {
+        console.error(err);
+        alert("Failed to reject paper: " + (err.message || err));
+    }
+}
+
+window.approvePaper = approvePaper;
+window.rejectPaper = rejectPaper;
+</script>
+
+</body>
+
+</html>

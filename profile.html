@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profile</title>
+    <link rel="stylesheet" href="main.css">
+
+<style>
+    body {
+        padding: 30px;
+    }
+    #profile {
+        background-color: white;
+        padding: 40px;
+    }
+    
+    .paper-card {
+        background-color: white;
+        padding: 40px;
+        margin-bottom: 20px;
+    }
+
+    .paper-title {
+        font-size: 3rem;
+    }
+
+    .abstract {
+        text-align: justify;
+    }
+    #logout {
+        width: 100px;
+        height: 40px;
+        color: white;
+        cursor: pointer;
+        background-color: var(--red);
+    }
+
+    #support {
+        width: 100px;
+        height: 40px;
+        color: white;
+        cursor: pointer;
+        background-color: black;
+    }
+</style>
+</head>
+
+<body>
+<div id="profile">
+</div>
+<br>
+<div id="papers"></div>
+
+<script src="main.js"></script>
+<script type="module">
+import { watchAuth, logout as apiLogout } from './auth.js';
+import { getUserProfile, updateUserProfile } from './users.js';
+import { getPapersByAuthor } from './papers.js';
+
+const params = new URLSearchParams(window.location.search);
+let profileId = params.get("id");
+let authUser = null;
+
+async function handleLogout() {
+    try {
+        await apiLogout();
+        window.location.href = "/login.html";
+    } catch(err) {
+        console.error("Logout error:", err);
+    }
+}
+window.logout = handleLogout;
+
+// Load immediately if profileId is present in URL
+if (profileId) {
+    loadProfile();
+}
+
+watchAuth(async (user) => {
+    authUser = user;
+    if (!profileId && user) {
+        profileId = user.uid;
+        loadProfile();
+    } else if (profileId) {
+        // Re-render to update owner-specific elements
+        loadProfile();
+    }
+});
+
+async function loadProfile() {
+    if (!profileId) {
+        document.getElementById("profile").innerHTML = `
+            <a href="/index.html">Back to Home Page</a>
+            <p>No user specified. Please <a href="/login.html">log in</a>.</p>
+        `;
+        return;
+    }
+
+    let user = null;
+    try {
+        user = await getUserProfile(profileId);
+    } catch(err) {
+        console.error("Error fetching user profile:", err);
+    }
+
+    if (!user) {
+        document.getElementById("profile").innerHTML = `
+            <a href="/index.html">Back to Home Page</a>
+            <h2>Author Profile</h2>
+            <p><b>Aeross Journal ID:</b> ${profileId}</p>
+            <p style="color: #666;">Unable to load profile metadata. (If you are the admin, ensure the updated firestore.rules allow public read on /users).</p>
+        `;
+    } else {
+        const isOwner = authUser && authUser.uid === profileId;
+        const isEditor = user.editor === true || user.across === true || user.aeross === true;
+
+        document.getElementById("profile").innerHTML = `
+            <a href="/index.html">Back to Home Page</a>
+            <h1 id="name">${user.name || "Author"}</h1>
+            ${
+                isEditor
+                ? `<a href="/approval.html"><b>Aeross Member</b></a>`
+                : ""
+            }
+            <p id="institute"><b>Institute:</b> ${user.institution || "Not specified"}</p>
+            ${
+                authUser && user.email
+                ? `<p id="email"><b>Email:</b> ${user.email}</p>`
+                : ""
+            }
+            
+            ${
+                !isOwner
+                ? `<p id="field"><b>Primary Field:</b> ${user.primary_field || "Not specified"}</p>`
+                : `
+                    <b>Primary Field:</b> 
+                    <input type="text" id="searchBox" name="searchBox" placeholder="Search subjects..." autocomplete="off" value="${user.primary_field || ""}">
+                    <div class="suggestions" id="suggestions"></div>
+                `
+            }
+            <p id="orcid"><b>ORCID:</b> <a href="https://orcid.org/${user.orcid}" target="_blank">${user.orcid || ""}</a></p>
+            <button onclick="navigator.clipboard.writeText('${profileId}')"><p><b>Aeross Journal ID:</b> ${profileId}</p></button>
+            <p id="dob"><b>Date of Birth:</b> ${user.birthdate ? user.birthdate.split(" ")[0] : "Not specified"}</p>
+
+            ${
+                isOwner
+                ? `<button onclick="logout()" id="logout">Logout</button>`
+                : ""
+            }
+            <button id="support" onclick="window.location.href = 'mailto:journal@aeross.org'">Support</button>
+        `;
+
+        if (isOwner) {
+            const searchBox = document.getElementById("searchBox");
+            const suggestions = document.getElementById("suggestions");
+            setupSearch(searchBox, suggestions);
+        }
+    }
+
+    // Load papers published by this author
+    const papersContainer = document.getElementById("papers");
+    try {
+        const isOwner = authUser && authUser.uid === profileId;
+        const papers = await getPapersByAuthor(profileId, isOwner);
+        papersContainer.innerHTML = "";
+
+        if (!papers || papers.length === 0) {
+            papersContainer.innerHTML = "<p>No published papers found for this author.</p>";
+            return;
+        }
+
+        papers.forEach(paper => {
+            let authorsHTML = "";
+            if (Array.isArray(paper.authorNames) && paper.authorNames.length > 0) {
+                authorsHTML = paper.authorNames.map((name, i) => {
+                    const aId = Array.isArray(paper.authorIds) ? paper.authorIds[i] : null;
+                    return aId ? `<a href="profile.html?id=${aId}">${name}</a>` : name;
+                }).join(", ");
+            } else if (paper.authorName) {
+                authorsHTML = paper.authorId
+                    ? `<a href="profile.html?id=${paper.authorId}">${paper.authorName}</a>`
+                    : paper.authorName;
+            }
+
+            const abstractText = paper.abstract || "";
+
+            papersContainer.innerHTML += `
+                <a class="paper-link" href="paper.html?id=${paper.id}">
+                    <div class="paper-card">
+                        <h2>${paper.title || "Untitled"}</h2>
+                        <div class="authors">
+                            ${authorsHTML}
+                        </div>
+                        <p class="abstract"><b>Abstract:</b> ${abstractText.length > 650
+                            ? abstractText.slice(0, 650) + "<b>... Read More</b>"
+                            : abstractText}</p>
+                        <p><b>Field:</b> ${paper.field || ""}</p>
+                    </div>
+                </a>
+            `;
+        });
+    } catch(err) {
+        console.warn("Could not load author papers:", err);
+        papersContainer.innerHTML = "<p>Unable to load papers at this time.</p>";
+    }
+}
+
+function setupSearch(searchBox, suggestions) {
+    if (!searchBox || !suggestions) return;
+    searchBox.addEventListener("input", () => {
+        suggestions.style.display = "block";
+        const value = searchBox.value.toLowerCase();
+        suggestions.innerHTML = "";
+
+        if (value === "") return;
+
+        const matches = (typeof options !== "undefined" ? options : []).filter(item =>
+            item.toLowerCase().includes(value)
+        );
+
+        matches.forEach(match => {
+            const div = document.createElement("div");
+            div.classList.add("suggestion-item");
+            div.textContent = match;
+
+            div.addEventListener("click", async () => {
+                searchBox.value = match;
+                suggestions.style.display = "none";
+                if (authUser) {
+                    await updateUserProfile(authUser.uid, {
+                        primary_field: match
+                    });
+                }
+            });
+
+            suggestions.appendChild(div);
+        });
+    });
+}
+</script>
+
+</body>
+</html>

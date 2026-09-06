@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Create Account</title>
+    <link rel="stylesheet" href="main.css">
+    <link rel='stylesheet' href='style_mobile.css'>
+<style>
+    body {
+        padding: 40px;
+    }
+    .form-container {
+        background-color: white;
+        padding: 30px;
+    }
+    input {
+        width: 100%;
+        height: 30px;
+        margin-bottom: 30px;
+    }
+    button {
+        width: 100%;
+        height: 35px; 
+        background-color: var(--red);
+        color: white;
+        cursor: pointer;
+    }
+
+    a {
+        color: var(--red);
+    }
+</style>
+</head>
+<body>
+
+<div class="form-container">
+
+    <h1>Create Account</h1>
+
+    <form id="signupForm">
+        <b>Full Name</b>
+        <input type="text" name="name" placeholder="Name" required>
+        <br>
+        <b>Email</b>
+        <input type="email" name="email" placeholder="Email" required>
+        <br>
+        <b>Password</b>
+        <input type="password" name="password" placeholder="Password (8 characters or more)" required>
+        <br>
+        <!-- Birthdate Field -->
+        <b>Date of Birth</b>
+        <input type="date" name="birthdate" placeholder="Date of Birth" required>
+        <br>
+        <b>Name of Institution</b>
+        <input type="text" name="institution" placeholder="Institution" required>
+        <br>
+        <b>ORCID - </b><i>Please ensure you include the hyphens while entering your ORCID</i>
+        <input type="text" name="orcid" placeholder="ORCID (0000-0000-0000-0000)" pattern="^\d{4}-\d{4}-\d{4}-\d{4}$" required>
+        <br>
+        <b>Primary Field of Study</b>
+        <div class="genrens">
+            <input type="text" id="searchBox" name="searchBox" placeholder="Search subjects..." autocomplete="off">
+            <div class="suggestions" id="suggestions"></div>
+        </div>
+        <br>
+        <button type="submit">Create Account</button>
+
+    </form>
+    <br>
+    <span>Have an account? <a href="/login.html">Login</a></span>
+</div>
+
+<script src="main.js"></script>
+<script type="module">
+import { signup } from './auth.js';
+import { sendRegistrationEmail } from './email.js';
+
+const form = document.getElementById("signupForm");
+const searchBox = document.getElementById("searchBox");
+const suggestions = document.getElementById("suggestions");
+
+function setupSearch(searchBox, suggestions) {
+    searchBox.addEventListener("input", () => {
+        suggestions.style.display = "block";
+        const value = searchBox.value.toLowerCase();
+        suggestions.innerHTML = "";
+
+        if (value === "") return;
+
+        const matches = (typeof options !== "undefined" ? options : []).filter(item =>
+            item.toLowerCase().includes(value)
+        );
+
+        matches.forEach(match => {
+            const div = document.createElement("div");
+            div.classList.add("suggestion-item");
+            div.textContent = match;
+
+            div.addEventListener("click", () => {
+                searchBox.value = match;
+                suggestions.style.display = "none";
+            });
+
+            suggestions.appendChild(div);
+        });
+    });
+}
+
+setupSearch(searchBox, suggestions);
+
+form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+
+    try {
+        const email = form.email.value.trim();
+        const name = form.name.value.trim();
+
+        const user = await signup({
+            email,
+            password: form.password.value,
+            name,
+            birthdate: form.birthdate.value,
+            institution: form.institution.value.trim(),
+            orcid: form.orcid.value.trim(),
+            primaryField: form.searchBox.value.trim()
+        });
+
+        const submitBtn = form.querySelector('button[type="submit"]');
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.textContent = "Sending Welcome Email...";
+        }
+
+        // Trigger automated welcome email via Apps Script Zoho bridge
+        try {
+            const emailRes = await sendRegistrationEmail({
+                email,
+                name,
+                uid: user ? user.uid : ''
+            });
+            console.log("Welcome email response:", emailRes);
+        } catch(mailErr) {
+            console.warn("Could not dispatch welcome email:", mailErr);
+        }
+
+        alert("Account created successfully! A welcome email has been dispatched.");
+        window.location.href = "index.html";
+    } catch(err) {
+        console.error(err);
+        if (err.code === "auth/email-already-in-use") {
+            if (confirm("An account with this email already exists. Would you like to go to the login page?")) {
+                window.location.href = "login.html";
+            }
+        } else if (err.code === "auth/weak-password") {
+            alert("Password is too weak. Please use at least 6 characters.");
+        } else if (err.code === "auth/invalid-email") {
+            alert("Please enter a valid email address.");
+        } else {
+            alert("Sign up failed: " + (err.message || "Please check your inputs"));
+        }
+    }
+});
+</script>
+
+</body>
+</html>

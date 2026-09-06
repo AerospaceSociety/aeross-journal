@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Search Papers</title>
+
+    <link rel="stylesheet" href="main.css">
+<style>
+    body {
+        margin: 40px;
+    }
+    
+    #categoryTitle {
+        font-size: 2.5rem;
+        color: rgb(255, 255, 255);
+    }
+
+    .paper-card {
+        background-color: white;
+        color:black;
+        border: 2px black solid;
+        padding: 20px;
+    }
+
+    .abstract {
+        text-align: justify;
+        color:black;
+    }
+    .paper-link {
+        text-decoration: none;
+        color: inherit;
+        display: block;
+    }
+
+    .paper-link:hover .paper-card {
+        transform: translateY(-2px);
+        transition: 0.2s;
+    }
+
+
+    .content-container {
+        width: 100%;
+        max-width: 900px;
+        margin: auto;
+    }
+
+    .search-area,
+    #results {
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    input {
+        width: 100%;
+        padding: 10px;
+        font-size: 16px;
+        box-sizing: border-box;
+        border: 2px black solid;
+    }
+
+    .paper-card {
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .choose-genre {
+        display: flex;
+        align-items: center;
+        position: relative;
+        column-gap: 400px;
+        input {
+            position:relative;
+            height: 50px;
+            border: 2px black solid;
+        }
+        
+    }
+
+    .suggestions {
+        align-self: center;
+        background: white;
+        border: 1px solid #ccc;
+        position: absolute;
+        z-index: 1000;
+        width: 100%; /* Add this so it matches the input width */
+        top: 100%;   /* Add this to place it just below the input */
+        left: 0;     /* Add this to align it to the left of the input */
+    }
+
+    .suggestion-item {
+        padding: 10px;
+        cursor: pointer;
+        border-bottom: 1px black solid;
+    }
+
+    .suggestion-item:hover {
+        background: var(--red);
+        color: #ffffff;
+    }
+
+@media (max-width:768px) {
+
+    .choose-genre {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 15px;
+    }
+
+    .choose-genre input {
+        width: 100%;
+        height: 50px;
+    }
+
+    .subject-area {
+        width: 100%;
+    }
+
+    .suggestions {
+        width: 100%;
+    }
+    .back-home {
+        display: inline-block;
+        color: white;
+        font-size: 1.15rem;
+        font-weight: bold;
+        text-decoration: none;
+        margin-bottom: 20px;
+    }
+    .back-home:hover {
+        text-decoration: underline;
+    }
+}
+</style>
+</head>
+
+<body>
+
+<div class="content-container">
+    <a href="/index.html" class="back-home">Back to Home Page</a>
+    
+    <div class="choose-genre">
+        <h1 id="categoryTitle"></h1>
+        <div class="subject-area">
+            <input type="text" id="searchBox_c" placeholder="Subject" autocomplete="off">
+            <div class="suggestions" id="suggestions"></div>
+        </div>
+    </div>
+    <br>
+    <div class="search-area">
+        <input
+            type="text"
+            id="searchBox"
+            placeholder="Search papers..."
+        >
+    </div>
+    <br>
+<div id="results"></div>
+</div>
+
+<script src="main.js"></script>
+<script type="module">
+import { getPapersByField, getAcceptedPapers } from './papers.js';
+
+const params = new URLSearchParams(window.location.search);
+const category = params.get("sub") || "";
+
+const categoryTitle = document.getElementById("categoryTitle");
+if (categoryTitle) {
+    categoryTitle.textContent = category || "All Papers";
+}
+
+const searchBox = document.getElementById("searchBox");
+const searchBox_c = document.getElementById("searchBox_c");
+const suggestions = document.getElementById("suggestions");
+
+let allPapers = [];
+
+async function loadPapers() {
+    try {
+        let papers = [];
+        if (category) {
+            // First try direct field match
+            papers = await getPapersByField(category);
+            // If empty, also check all accepted papers for partial match
+            if (papers.length === 0) {
+                const allAccepted = await getAcceptedPapers();
+                papers = allAccepted.filter(p => 
+                    p.field && p.field.toLowerCase().includes(category.toLowerCase())
+                );
+            }
+        } else {
+            papers = await getAcceptedPapers();
+        }
+
+        allPapers = papers;
+        renderPapers(papers);
+    } catch(err) {
+        console.error("Error loading papers:", err);
+        document.getElementById("results").innerHTML = "<p>Failed to load papers.</p>";
+    }
+}
+
+function renderPapers(papers) {
+    const container = document.getElementById("results");
+    container.innerHTML = "";
+
+    if (!papers || papers.length === 0) {
+        container.innerHTML = "<p>No papers found.</p>";
+        return;
+    }
+
+    papers.forEach(paper => {
+        let authorsHTML = "";
+
+        if (Array.isArray(paper.authorNames) && paper.authorNames.length > 0) {
+            authorsHTML = paper.authorNames.map((name, i) => {
+                const authorId = Array.isArray(paper.authorIds) ? paper.authorIds[i] : null;
+                return authorId 
+                    ? `<a href="profile.html?id=${authorId}">${name}</a>`
+                    : `<span>${name}</span>`;
+            }).join(", ");
+        } else if (paper.authorName) {
+            authorsHTML = paper.authorId
+                ? `<a href="profile.html?id=${paper.authorId}">${paper.authorName}</a>`
+                : `<span>${paper.authorName}</span>`;
+        }
+
+        const abstractText = paper.abstract || "";
+
+        container.innerHTML += `
+            <a class="paper-link" href="paper.html?id=${paper.id}">
+                <div class="paper-card">
+                    <h2 class="paper-title">${paper.title || "Untitled"}</h2>
+                    <div class="authors">
+                        ${authorsHTML}
+                    </div>
+                    <p class="abstract">${abstractText.length > 650
+                        ? abstractText.slice(0, 650) + "<b>... Read More</b>"
+                        : abstractText}</p>
+                    <p class="field">
+                        <strong>Field:</strong>
+                        ${paper.field || "Uncategorized"}
+                    </p>
+                </div>
+            </a>
+        `;
+    });
+}
+
+// Live search inside category
+if (searchBox) {
+    searchBox.addEventListener("input", () => {
+        const value = searchBox.value.toLowerCase().trim();
+        const filtered = allPapers.filter(paper => {
+            return (
+                (paper.title && paper.title.toLowerCase().includes(value)) ||
+                (paper.abstract && paper.abstract.toLowerCase().includes(value))
+            );
+        });
+        renderPapers(filtered);
+    });
+}
+
+if (searchBox_c && suggestions) {
+    searchBox_c.addEventListener("input", () => {
+        const value = searchBox_c.value.toLowerCase();
+        suggestions.innerHTML = "";
+
+        if (value === "") return;
+
+        const matches = (typeof options !== "undefined" ? options : []).filter(item =>
+            item.toLowerCase().includes(value)
+        );
+
+        matches.forEach(match => {
+            const div = document.createElement("div");
+            div.classList.add("suggestion-item");
+            div.textContent = match;
+
+            div.addEventListener("click", () => {
+                window.location.href = `/search.html?sub=${encodeURIComponent(match)}`;
+            });
+
+            suggestions.appendChild(div);
+        });
+    });
+}
+
+loadPapers();
+</script>
+
+</body>
+
+</html>

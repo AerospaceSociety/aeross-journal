@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+    <title>Paper</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="main.css">
+<style>
+    body {
+        background-color: var(--red);
+        font-size: 1.25rem;
+        padding: 50px;
+    }
+
+    .paper-card {
+        background-color: white;
+        padding: 40px;
+    }
+
+    .paper-title {
+        font-size: 3rem;
+    }
+
+    a {
+        color: black;
+    }
+
+    .abstract {
+        text-align: justify;
+    }
+
+    @media (max-width: 768px) {
+        
+        body {
+            padding: 20px;
+        }
+    }
+</style>
+</head>
+
+<body>
+
+<div id="paper"></div>
+
+<script src="main.js"></script>
+<script type="module">
+import { getPaper } from './papers.js';
+
+const params = new URLSearchParams(window.location.search);
+const id = params.get("id");
+
+/* LOAD PAPER */
+async function loadPaper() {
+    try {
+        if (!id) throw new Error("No paper ID provided");
+
+        const paper = await getPaper(id);
+        if (!paper) throw new Error("Paper not found");
+
+        let authorsHTML = "";
+
+        if (Array.isArray(paper.authorNames) && paper.authorNames.length > 0) {
+            authorsHTML = paper.authorNames.map((name, i) => {
+                const authorId = Array.isArray(paper.authorIds) ? paper.authorIds[i] : null;
+                return authorId 
+                    ? `<a href="profile.html?id=${authorId}">${name}</a>`
+                    : `<span>${name}</span>`;
+            }).join(", ");
+        } else if (paper.authorName) {
+            authorsHTML = paper.authorId
+                ? `<a href="profile.html?id=${paper.authorId}">${paper.authorName}</a>`
+                : `<span>${paper.authorName}</span>`;
+        }
+
+        const pdfUrl = paper.fileUrl || paper.downloadUrl || "#";
+
+        document.title = paper.title || "Paper";
+
+        document.getElementById("paper").innerHTML = `
+            <div class="paper-card">
+                <h1 class="paper-title">${paper.title || "Untitled"}</h1>
+                <b>Authors:</b>
+                <div class="authors">
+                    ${authorsHTML}
+                </div>
+
+                <p class="abstract">
+                    <b>Abstract:</b>
+                    ${paper.abstract || ""}
+                </p>
+                <p class="field">
+                    <strong>Field:</strong>
+                    <a href="/search.html?sub=${encodeURIComponent(paper.field || "")}" class="field-link">
+                        ${paper.field || "Uncategorized"}
+                    </a>
+                </p>
+                <a href="${pdfUrl}" target="_blank" class="read">
+                    Read PDF
+                </a>
+            </div>
+        `;
+    } catch(err) {
+        console.error(err);
+        document.getElementById("paper").innerHTML = `
+            <div class="paper-card">
+                <h2>Paper not found</h2>
+                <p><a href="/index.html">Return to Home</a></p>
+            </div>
+        `;
+    }
+}
+
+loadPaper();
+</script>
+
+</body>
+
+</html>
