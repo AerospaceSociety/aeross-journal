@@ -1,8 +1,7 @@
 // email.js
 // Dispatches automated transactional emails through the Apps Script bridge (Zoho / ZeptoMail)
+import { APPS_SCRIPT_URL, APPS_SCRIPT_SECRET } from './config.js';
 
-const APPS_SCRIPT_URL = 'https://script.google.com/a/macros/dpsrkp.net/s/AKfycbzMhTyA8N8DLpiSo9lU3y7Dw5FI_RvZgzmil3IR0NBwr0_PPJ4VSjAtq7VdTXThKE6-eQ/exec';
-const APPS_SCRIPT_SECRET = 'QUVST1NTOlRoZUFlcm9zcGFjZVNvY2lldHlvZkRQU1JLUHVyYW0=';
 
 async function dispatchEmail(emailType, recipient, data = {}) {
   if (!recipient) {

@@ -1,4 +1,6 @@
 {
   "framework": null,
+  "buildCommand": "node generate-config.js",
+  "outputDirectory": ".",
   "cleanUrls": true
 }

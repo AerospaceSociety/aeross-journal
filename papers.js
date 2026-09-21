@@ -6,9 +6,7 @@ import {
   collection, addDoc, doc, getDoc, getDocs, updateDoc, deleteDoc,
   query, where, orderBy, serverTimestamp
 } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js';
-
-const APPS_SCRIPT_URL = 'https://script.google.com/a/macros/dpsrkp.net/s/AKfycbzMhTyA8N8DLpiSo9lU3y7Dw5FI_RvZgzmil3IR0NBwr0_PPJ4VSjAtq7VdTXThKE6-eQ/exec';
-const APPS_SCRIPT_SECRET = 'QUVST1NTOlRoZUFlcm9zcGFjZVNvY2lldHlvZkRQU1JLUHVyYW0=';
+import { APPS_SCRIPT_URL, APPS_SCRIPT_SECRET } from './config.js';
 
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {

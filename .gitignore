@@ -11,6 +11,7 @@ yarn-error.log*
 # Environment & temporary files
 .env
 .env.local
+config.js
 testing.html
 
 # OS metadata
