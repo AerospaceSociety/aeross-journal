@@ -1,11 +1,23 @@
 // email.js
 // Dispatches automated transactional emails through the Apps Script bridge (Zoho / ZeptoMail)
-import { APPS_SCRIPT_URL, APPS_SCRIPT_SECRET } from './config.js';
+let APPS_SCRIPT_URL = '';
+let APPS_SCRIPT_SECRET = '';
 
+try {
+  const config = await import('./config.js');
+  APPS_SCRIPT_URL = config.APPS_SCRIPT_URL || '';
+  APPS_SCRIPT_SECRET = config.APPS_SCRIPT_SECRET || '';
+} catch (e) {
+  console.warn('[email.js] config.js not found or failed to load. Automated email dispatch is inactive.');
+}
 
 async function dispatchEmail(emailType, recipient, data = {}) {
   if (!recipient) {
     console.warn("No recipient provided for automated email:", emailType);
+    return;
+  }
+  if (!APPS_SCRIPT_URL) {
+    console.warn("Google Apps Script URL is not configured; skipping email dispatch.");
     return;
   }
 

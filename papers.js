@@ -6,7 +6,16 @@ import {
   collection, addDoc, doc, getDoc, getDocs, updateDoc, deleteDoc,
   query, where, orderBy, serverTimestamp
 } from 'https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js';
-import { APPS_SCRIPT_URL, APPS_SCRIPT_SECRET } from './config.js';
+let APPS_SCRIPT_URL = '';
+let APPS_SCRIPT_SECRET = '';
+
+try {
+  const config = await import('./config.js');
+  APPS_SCRIPT_URL = config.APPS_SCRIPT_URL || '';
+  APPS_SCRIPT_SECRET = config.APPS_SCRIPT_SECRET || '';
+} catch (e) {
+  console.warn('[papers.js] config.js not found or failed to load. Google Apps Script Drive integration is inactive.');
+}
 
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
@@ -19,6 +28,9 @@ function fileToBase64(file) {
 
 // Upload PDF to Google Drive via Apps Script Web App
 async function uploadToDrive(file) {
+  if (!APPS_SCRIPT_URL) {
+    throw new Error('Google Apps Script bridge is not configured (missing APPS_SCRIPT_URL).');
+  }
   const fileData = await fileToBase64(file);
   const res = await fetch(APPS_SCRIPT_URL, {
     method: 'POST',

@@ -1,0 +1,9 @@
+{
+  "name": "aeross-journal",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AEROSS Journal Web Platform",
+  "scripts": {
+    "build": "node generate-config.js"
+  }
+}

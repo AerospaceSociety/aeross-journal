@@ -231,3 +231,21 @@ const options = [
     "Music Theory",
     "Literature"
 ];
+
+// Global navigation handlers for navbar buttons
+window.about = function() {
+    window.location.href = "/about.html";
+};
+
+window.publish = function() {
+    window.location.href = "/pwu.html";
+};
+
+window.profile = function() {
+    const user = window.currentUser;
+    if (user && user.uid) {
+        window.location.href = `/profile.html?id=${user.uid}`;
+    } else {
+        window.location.href = "/login.html";
+    }
+};
