@@ -1,0 +1,9 @@
+node_modules/
+firebase_guide/
+.env
+.env.local
+config.js
+testing.html
+*.log
+.DS_Store
+Thumbs.db
